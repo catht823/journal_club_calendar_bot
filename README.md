@@ -172,6 +172,99 @@ calendar_bot/
 ├── processed.json # Processed message tracking  
 └── calendars.json # Calendar ID mapping  
 
+## Automation & Scheduling
+
+The program does **NOT** run automatically by default. You need to set up periodic execution using your operating system's task scheduler.
+
+### How It Works
+- **Manual runs**: `python main.py --once` (runs once and exits)
+- **Scheduled runs**: `python main.py --poll` (designed for automated execution)
+- **No built-in scheduler**: The program itself doesn't have automatic scheduling
+
+### Windows Task Scheduler Setup
+
+1. Open **Task Scheduler** (search in Start menu)
+2. Click **"Create Basic Task"**
+3. Configure the task:
+   - **Name**: "Journal Club Calendar Bot"
+   - **Description**: "Automatically process journal club emails"
+   - **Trigger**: Choose frequency (see recommendations below)
+   - **Action**: "Start a program"
+   - **Program/script**: `C:\Python\python.exe` (or your Python installation path)
+   - **Add arguments**: `C:\Zijing_local\calendar_bot\main.py --poll`
+   - **Start in**: `C:\Zijing_local\calendar_bot`
+4. Click **Finish**
+
+### macOS Scheduling
+
+**Option 1: Using crontab**
+```bash
+# Edit crontab
+crontab -e
+
+# Add this line (runs every 10 minutes)
+*/10 * * * * cd /path/to/calendar_bot && python3 main.py --poll
+```
+
+**Option 2: Using launchd (more modern)**
+Create `~/Library/LaunchAgents/com.journalclub.bot.plist`:
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.journalclub.bot</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/path/to/calendar_bot/main.py</string>
+        <string>--poll</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>600</integer>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+```
+
+### Recommended Frequencies
+
+- **Every 10 minutes**: Good for active journal club lists
+- **Every hour**: Sufficient for most use cases
+- **Daily**: If you only receive emails once per day
+
+### What Happens Each Run
+
+1. **Checks Gmail** for new emails with your configured label
+2. **Processes messages** (up to 50 per run, configurable)
+3. **Looks back** 14 days for new messages (configurable)
+4. **Skips processed** messages to avoid duplicates
+5. **Creates/updates** calendar events in appropriate category calendars
+
+### Safety Features
+
+- **Idempotent**: Safe to run multiple times without creating duplicates
+- **Deduplication**: Uses Gmail message IDs to track processed emails
+- **Error handling**: Continues processing even if individual emails fail
+- **State tracking**: Remembers which emails have been processed
+
+### Configuration for Automation
+
+In `config/settings.yml`:
+```yaml
+lookback_days: 14        # How far back to search for emails
+max_messages: 50         # Maximum emails to process per run
+```
+
+### Troubleshooting Automation
+
+- **Check logs**: Set `LOG_LEVEL=DEBUG` environment variable for detailed logs
+- **Test manually**: Run `python main.py --once` to test before scheduling
+- **Verify Python path**: Ensure Task Scheduler uses the correct Python executable
+- **Check permissions**: Ensure the scheduled task has access to your files and internet
+
 ## What Each File Does
 
 ### Core Files
