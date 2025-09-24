@@ -148,29 +148,29 @@ export JC_CAL_PREFIX="Research Talks – "
 
 ## File Structure
 calendar_bot/
-├── main.py # Main entry point
-├── requirements.txt # Python dependencies
-├── .gitignore # Git ignore rules
-├── config/
-│ ├── settings.yml # General settings
-│ └── categories.yml # Category definitions
-├── journal_club_bot/ # Main package
-│ ├── init.py
-│ ├── auth.py # Google OAuth authentication
-│ ├── gmail_client.py # Gmail API interactions
-│ ├── parser.py # Email parsing logic
-│ ├── categorizer.py # Category classification
-│ ├── calendar_client.py # Calendar API interactions
-│ ├── storage.py # Local state management
-│ └── models.py # Data models
-├── scripts/
-│ ├── setup_windows.ps1 # Windows setup script
-│ └── setup_macos.sh # macOS setup script
-├── tokens/ # OAuth tokens (auto-created)
-│ └── client_secret.json # Your Google OAuth credentials
-└── state/ # Processing state (auto-created)
-├── processed.json # Processed message tracking
-└── calendars.json # Calendar ID mapping
+├── main.py # Main entry point  
+├── requirements.txt # Python dependencies  
+├── .gitignore # Git ignore rules  
+├── config/  
+│ ├── settings.yml # General settings  
+│ └── categories.yml # Category definitions  
+├── journal_club_bot/ # Main package  
+│ ├── init.py  
+│ ├── auth.py # Google OAuth authentication  
+│ ├── gmail_client.py # Gmail API interactions  
+│ ├── parser.py # Email parsing logic  
+│ ├── categorizer.py # Category classification  
+│ ├── calendar_client.py # Calendar API interactions  
+│ ├── storage.py # Local state management  
+│ └── models.py # Data models  
+├── scripts/  
+│ ├── setup_windows.ps1 # Windows setup script  
+│ └── setup_macos.sh # macOS setup script  
+├── tokens/ # OAuth tokens (auto-created)  
+│ └── client_secret.json # Your Google OAuth credentials  
+└── state/ # Processing state (auto-created)  
+├── processed.json # Processed message tracking  
+└── calendars.json # Calendar ID mapping  
 
 ## What Each File Does
 
