@@ -1,0 +1,8 @@
+timezone: America/Los_Angeles
+source_label: buffer-label
+processed_label: jc-processed
+calendar_prefix: "Journal Club – "
+default_duration_minutes: 60
+lookback_days: 14
+max_messages: 50
+auto_create_calendars: true

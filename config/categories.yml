@@ -1,0 +1,27 @@
+categories:
+  Genetics & Genomics:
+    keywords: [genome, genomic, crispr, sequencing, gwas, variant, snp, epigenome, enhancer]
+    colorId: "11"
+  Neuroscience:
+    keywords: [neuron, neural, synapse, cortex, hippocampus, fmri, electrophysiology, glia]
+    colorId: "9"
+  Immunology:
+    keywords: [immune, t cell, b cell, cytokine, antigen, macrophage, antibody, inflammation]
+    colorId: "10"
+  Cell Biology:
+    keywords: [organelle, cytoskeleton, vesicle, endocytosis, actin, microtubule, autophagy]
+    colorId: "7"
+  Microbiology & Virology:
+    keywords: [bacteria, viral, virus, pathogen, microbiome, host-pathogen, antibiotic]
+    colorId: "6"
+  Structural Biology:
+    keywords: [cryo-em, crystallography, structure, nmr, folding, protein structure]
+    colorId: "8"
+  Computational Biology:
+    keywords: [machine learning, model, algorithm, single-cell, scrna-seq, rna-seq, computational]
+    colorId: "5"
+  Systems Biology:
+    keywords: [network, systems, dynamics, regulation, feedback, modeling]
+    colorId: "4"
+fallback_category: Other
+fallback_colorId: "2"
