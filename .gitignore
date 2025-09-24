@@ -1,0 +1,17 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.DS_Store
+.env
+.venv/
+venv/
+# Project state and secrets
+tokens/
+state/
+*.log
+
+# OS/editor
+.vscode/
+.idea/
