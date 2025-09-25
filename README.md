@@ -265,6 +265,171 @@ max_messages: 50         # Maximum emails to process per run
 - **Verify Python path**: Ensure Task Scheduler uses the correct Python executable
 - **Check permissions**: Ensure the scheduled task has access to your files and internet
 
+## Run Online on Google Cloud (Cloud Run)
+
+This section shows how to run the bot online without a local machine continuously running. Recommended path: Cloud Run + Cloud Scheduler (simple, reliable).
+
+### Overview
+
+- Cloud Run hosts a small HTTP service that triggers one poll cycle.
+- Cloud Scheduler hits that HTTP endpoint on a schedule (e.g., every 10 minutes).
+- Secrets (OAuth files) are stored in Google Secret Manager.
+- The app runs statelessly; prefer Firestore/Cloud Storage if you later move `state/` off disk.
+
+### 1) Add a minimal HTTP entrypoint
+
+Create `server.py`:
+```python
+from flask import Flask, jsonify
+from main import main as run_once
+
+app = Flask(__name__)
+
+@app.get("/healthz")
+def health():
+    return "ok", 200
+
+@app.post("/run")
+def run():
+    run_once()
+    return jsonify({"status": "ok"}), 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
+```
+
+Add to `requirements.txt`:
+```bash
+Flask==3.0.3
+gunicorn==22.0.0
+```
+
+### 2) Dockerfile
+
+Create `Dockerfile` at project root:
+```dockerfile
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "server:app"]
+```
+
+Optional `.dockerignore`:
+```bash
+.venv
+__pycache__
+*.pyc
+tokens
+state
+.vscode
+.idea
+```
+
+### 3) OAuth secrets in Secret Manager
+
+Do a one-time local auth to generate:
+- `tokens/client_secret.json` (your OAuth client)
+- `tokens/token.json` (your user token)
+
+Create secrets:
+```bash
+gcloud secrets create jc-client-secret --replication-policy=automatic
+gcloud secrets versions add jc-client-secret --data-file=tokens/client_secret.json
+
+gcloud secrets create jc-token --replication-policy=automatic
+gcloud secrets versions add jc-token --data-file=tokens/token.json
+```
+
+Note: Do NOT commit `tokens/` to git.
+
+### 4) Build and deploy to Cloud Run
+
+Set project/region:
+```bash
+gcloud config set project YOUR_PROJECT_ID
+gcloud config set run/region us-central1
+```
+
+Build:
+```bash
+gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/jc-bot
+```
+
+Deploy:
+```bash
+gcloud run deploy jc-bot \
+  --image gcr.io/YOUR_PROJECT_ID/jc-bot \
+  --allow-unauthenticated \
+  --set-env-vars=JC_TIMEZONE=America/Los_Angeles \
+  --set-env-vars=JC_SOURCE_LABEL=buffer-label \
+  --set-env-vars=JC_PROCESSED_LABEL=jc-processed \
+  --set-env-vars=JC_CAL_PREFIX="Journal Club – " \
+  --set-secrets=JC_CLIENT_SECRET=jc-client-secret:latest \
+  --set-secrets=JC_TOKEN=jc-token:latest
+```
+
+Your service URL will be like:
+https://jc-bot-XXXX-uc.a.run.app
+
+### 5) Cloud Scheduler (run every N minutes)
+
+Create a service account for scheduler (or reuse an existing one) and grant Cloud Run Invoker:
+```bash
+gcloud iam service-accounts create jc-scheduler \
+  --display-name="Journal Club Scheduler"
+
+gcloud run services add-iam-policy-binding jc-bot \
+  --member="serviceAccount:jc-scheduler@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/run.invoker"
+```
+
+Create the job (runs every 10 minutes):
+```bash
+gcloud scheduler jobs create http jc-bot-every-10m \
+  --schedule="*/10 * * * *" \
+  --uri="https://YOUR_CLOUD_RUN_URL/run" \
+  --http-method=POST \
+  --oidc-service-account-email=jc-scheduler@YOUR_PROJECT_ID.iam.gserviceaccount.com \
+  --oidc-token-audience="https://YOUR_CLOUD_RUN_URL"
+```
+
+### Configuration (no code changes needed)
+
+Cloud Run env vars override YAML:
+- `JC_TIMEZONE` (default: America/Los_Angeles)
+- `JC_SOURCE_LABEL` (default: buffer-label)
+- `JC_PROCESSED_LABEL` (default: jc-processed)
+- `JC_CAL_PREFIX` (default: "Journal Club – ")
+
+You can also update `config/settings.yml`, but env vars are preferred for cloud.
+
+### Notes & Best Practices
+
+- Tokens refresh: If `token.json` refreshes, you’ll need to update the `jc-token` secret with the new file. For long-term automation on Google Workspace, consider a service account with domain-wide delegation (not available for personal Gmail).
+- State: For high reliability across revisions/instances, store `state/processed.json` and `state/calendars.json` in Firestore or Cloud Storage.
+- Security: Keep credentials in Secret Manager; never commit them to git.
+- Monitoring: Use `/healthz` endpoint for health checks; check Cloud Run logs for errors.
+
+### Alternative: Gmail Push (advanced)
+
+For near real-time processing:
+- Set up Gmail `users.watch` to a Pub/Sub topic.
+- Make Cloud Run handle Pub/Sub push messages and process new emails.
+- Requires renewing the watch periodically and extra setup; use Scheduler + polling first.
+
 ## What Each File Does
 
 ### Core Files
