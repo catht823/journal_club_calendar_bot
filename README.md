@@ -586,3 +586,45 @@ Notes:
 
 ### Configuration Files
 - **`config
+\n+## Update and Redeploy (Cloud Run)
+\n+When you change code or configuration, rebuild the container image and redeploy the Cloud Run service.
+\n+### 1) Rebuild the image
+```bash
+PROJECT_ID=$(gcloud config get-value project)
+gcloud builds submit --tag gcr.io/$PROJECT_ID/jc-bot
+```
+\n+### 2) Redeploy to Cloud Run
+```bash
+REGION=us-central1
+gcloud run deploy jc-bot \
+  --image gcr.io/$PROJECT_ID/jc-bot \
+  --region $REGION \
+  --allow-unauthenticated
+```
+\n+### 3) Verify the new revision
+```bash
+gcloud run services describe jc-bot --region=$REGION --format='value(status.url)'
+curl -X GET "$(gcloud run services describe jc-bot --region=$REGION --format='value(status.url)')/healthz"
+```
+To trigger a run immediately:
+```bash
+gcloud scheduler jobs run jc-bot-every-10m --location=$REGION
+```
+\n+### 4) If you changed dependencies
+Update `requirements.txt` first; the build step will install new packages automatically during `gcloud builds submit`.
+\n+### 5) If you changed OAuth tokens or client secret
+Update Secret Manager so Cloud Run reads the latest versions:
+```bash
+gcloud secrets versions add jc-client-secret --data-file=tokens/client_secret.json
+gcloud secrets versions add jc-token --data-file=tokens/token.json
+```
+No redeploy is required for new secret versions; redeploy only if you changed secret names or env var mappings.
+\n+### 6) Common checks
+- Confirm project: `gcloud config get-value project`
+- Confirm image exists: `gcloud container images list-tags gcr.io/$PROJECT_ID/jc-bot`
+- Get service URL: `gcloud run services describe jc-bot --region=$REGION --format='value(status.url)'`
+\n+### 7) Roll back (if needed)
+```bash
+gcloud run revisions list --service=jc-bot --region=$REGION
+gcloud run services update-traffic jc-bot --to-revisions REVISION_NAME=100 --region=$REGION
+```
