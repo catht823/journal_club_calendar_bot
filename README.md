@@ -416,6 +416,58 @@ Cloud Run env vars override YAML:
 
 You can also update `config/settings.yml`, but env vars are preferred for cloud.
 
+### Update Environment Variables (Cloud Run)
+
+You can change configuration at runtime by updating environment variables on your Cloud Run service.
+
+#### CLI (gcloud)
+
+- Set or change multiple variables:
+```bash
+gcloud run services update jc-bot \
+  --set-env-vars=JC_TIMEZONE=America/Los_Angeles,JC_SOURCE_LABEL=buffer-label
+```
+
+- Update a single variable without touching others:
+```bash
+gcloud run services update jc-bot \
+  --update-env-vars=JC_TIMEZONE=America/New_York
+```
+
+- Remove variables:
+```bash
+gcloud run services update jc-bot \
+  --remove-env-vars=JC_TIMEZONE,JC_SOURCE_LABEL
+```
+
+- Set secrets as env vars from Secret Manager:
+```bash
+gcloud run services update jc-bot \
+  --set-secrets=JC_CLIENT_SECRET=jc-client-secret:latest,JC_TOKEN=jc-token:latest
+```
+
+- During deploy (new revision) with env vars:
+```bash
+gcloud run deploy jc-bot \
+  --image gcr.io/PROJECT_ID/jc-bot \
+  --set-env-vars=JC_TIMEZONE=America/Los_Angeles
+```
+
+- View current env vars:
+```bash
+gcloud run services describe jc-bot \
+  --format="value(spec.template.spec.containers[0].env)"
+```
+
+Notes:
+- Each change creates a new revision.
+- Common vars you may set:
+  - `JC_TIMEZONE` (e.g., America/Los_Angeles)
+  - `JC_SOURCE_LABEL` (Gmail label to process)
+  - `JC_PROCESSED_LABEL` (label to mark processed)
+  - `JC_CAL_PREFIX` (calendar name prefix)
+  - `JC_CLIENT_SECRET` / `JC_TOKEN` (from Secret Manager)
+
 ### Notes & Best Practices
 
 - Tokens refresh: If `token.json` refreshes, you’ll need to update the `jc-token` secret with the new file. For long-term automation on Google Workspace, consider a service account with domain-wide delegation (not available for personal Gmail).
@@ -429,6 +481,102 @@ For near real-time processing:
 - Set up Gmail `users.watch` to a Pub/Sub topic.
 - Make Cloud Run handle Pub/Sub push messages and process new emails.
 - Requires renewing the watch periodically and extra setup; use Scheduler + polling first.
+
+## Install Google Cloud SDK (gcloud)
+
+Required for deploying to Cloud Run and managing secrets.
+
+### Windows (PowerShell)
+
+**Option 1: Using winget (recommended)**
+```powershell
+winget install --id Google.CloudSDK -e
+```
+
+**Option 2: Download installer**
+1. Go to [Google Cloud SDK installer](https://cloud.google.com/sdk/docs/install)
+2. Download and run the Windows installer
+3. Follow the installation wizard
+
+**After installation:**
+```powershell
+# Restart PowerShell, then verify
+gcloud --version
+
+# Initialize (login and set project)
+gcloud init
+```
+
+### macOS (Terminal)
+
+**Option 1: Using Homebrew (recommended)**
+```bash
+brew install --cask google-cloud-sdk
+
+# Add to shell profile (choose one)
+# For bash:
+echo 'source "$(brew --prefix)/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/path.bash.inc"' >> ~/.bash_profile
+source ~/.bash_profile
+
+# For zsh:
+echo 'source "$(brew --prefix)/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/path.zsh.inc"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**Option 2: Interactive installer**
+```bash
+# Download and install
+curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-darwin-x86_64.tar.gz
+tar -xzf google-cloud-cli-*.tar.gz
+./google-cloud-sdk/install.sh
+
+# Restart shell
+exec -l $SHELL
+```
+
+**After installation:**
+```bash
+# Verify installation
+gcloud --version
+
+# Initialize (login and set project)
+gcloud init
+```
+
+### Troubleshooting
+
+**If gcloud is not recognized:**
+- **Windows**: Ensure `C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin` is in your PATH
+- **macOS**: Source the path files as shown above, or restart your terminal
+
+**First-time setup:**
+```bash
+# Login to Google Cloud
+gcloud auth login
+
+# Set your project
+gcloud config set project YOUR_PROJECT_ID
+
+# Enable required APIs
+gcloud services enable run.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+gcloud services enable secretmanager.googleapis.com
+gcloud services enable cloudscheduler.googleapis.com
+```
+
+### Required APIs
+
+Enable these APIs for the journal club bot:
+```bash
+gcloud services enable run.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+gcloud services enable secretmanager.googleapis.com
+gcloud services enable cloudscheduler.googleapis.com
+```
+
+Notes:
+- Installation creates a new revision each time you update env vars.
+- Keep your project ID handy for all gcloud commands.
 
 ## What Each File Does
 
