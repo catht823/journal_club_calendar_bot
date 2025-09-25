@@ -416,58 +416,6 @@ Cloud Run env vars override YAML:
 
 You can also update `config/settings.yml`, but env vars are preferred for cloud.
 
-### Update Environment Variables (Cloud Run)
-
-You can change configuration at runtime by updating environment variables on your Cloud Run service.
-
-#### CLI (gcloud)
-
-- Set or change multiple variables:
-```bash
-gcloud run services update jc-bot \
-  --set-env-vars=JC_TIMEZONE=America/Los_Angeles,JC_SOURCE_LABEL=buffer-label
-```
-
-- Update a single variable without touching others:
-```bash
-gcloud run services update jc-bot \
-  --update-env-vars=JC_TIMEZONE=America/New_York
-```
-
-- Remove variables:
-```bash
-gcloud run services update jc-bot \
-  --remove-env-vars=JC_TIMEZONE,JC_SOURCE_LABEL
-```
-
-- Set secrets as env vars from Secret Manager:
-```bash
-gcloud run services update jc-bot \
-  --set-secrets=JC_CLIENT_SECRET=jc-client-secret:latest,JC_TOKEN=jc-token:latest
-```
-
-- During deploy (new revision) with env vars:
-```bash
-gcloud run deploy jc-bot \
-  --image gcr.io/PROJECT_ID/jc-bot \
-  --set-env-vars=JC_TIMEZONE=America/Los_Angeles
-```
-
-- View current env vars:
-```bash
-gcloud run services describe jc-bot \
-  --format="value(spec.template.spec.containers[0].env)"
-```
-
-Notes:
-- Each change creates a new revision.
-- Common vars you may set:
-  - `JC_TIMEZONE` (e.g., America/Los_Angeles)
-  - `JC_SOURCE_LABEL` (Gmail label to process)
-  - `JC_PROCESSED_LABEL` (label to mark processed)
-  - `JC_CAL_PREFIX` (calendar name prefix)
-  - `JC_CLIENT_SECRET` / `JC_TOKEN` (from Secret Manager)
-
 ### Notes & Best Practices
 
 - Tokens refresh: If `token.json` refreshes, you’ll need to update the `jc-token` secret with the new file. For long-term automation on Google Workspace, consider a service account with domain-wide delegation (not available for personal Gmail).
@@ -475,108 +423,79 @@ Notes:
 - Security: Keep credentials in Secret Manager; never commit them to git.
 - Monitoring: Use `/healthz` endpoint for health checks; check Cloud Run logs for errors.
 
+### Updating the Cloud Run Deployment
+
+When you modify code, configuration files, or dependencies, follow these steps to update your Cloud Run service:
+
+#### 1. Rebuild the Docker Image
+```bash
+PROJECT_ID=$(gcloud config get-value project)
+gcloud builds submit --tag gcr.io/$PROJECT_ID/jc-bot
+```
+
+#### 2. Redeploy to Cloud Run
+```bash
+REGION=us-central1
+gcloud run deploy jc-bot \
+  --image gcr.io/$PROJECT_ID/jc-bot \
+  --region $REGION \
+  --allow-unauthenticated
+```
+
+#### 3. Verify the Update
+```bash
+# Check the service URL and latest revision
+gcloud run services describe jc-bot --region $REGION --format='value(status.url, status.latestReadyRevisionName)'
+
+# Test the endpoint manually
+curl -X POST "$(gcloud run services describe jc-bot --region $REGION --format='value(status.url)')/run"
+```
+
+#### 4. Update Dependencies (if needed)
+If you modified `requirements.txt`:
+- Repeat steps 1-2 (rebuild + redeploy)
+- The new dependencies will be installed in the updated image
+
+#### 5. Update Configuration Files
+Changes to `config/settings.yml` and `config/categories.yml` are automatically included when you rebuild the image. No additional steps needed.
+
+#### 6. Update OAuth Credentials (if needed)
+If you refreshed your OAuth tokens or client credentials:
+```bash
+# Update the secrets in Secret Manager
+gcloud secrets versions add jc-client-secret --data-file=tokens/client_secret.json
+gcloud secrets versions add jc-token --data-file=tokens/token.json
+```
+No redeploy needed unless you changed secret names - the latest version is read at runtime.
+
+#### 7. Test the Updated Service
+```bash
+# Trigger the scheduler job manually to test
+gcloud scheduler jobs run jc-bot-every-10m --location=us-central1
+```
+
+#### 8. Rollback (if needed)
+If something goes wrong, you can rollback to a previous revision:
+```bash
+# List available revisions
+gcloud run revisions list --service=jc-bot --region $REGION
+
+# Rollback to a specific revision
+gcloud run services update-traffic jc-bot --region $REGION --to-revisions REVISION_NAME=100
+```
+
+#### Important Notes
+- The Cloud Scheduler job and environment variables persist across redeploys
+- If deployment fails with "image not found", ensure the tag in step 2 matches your build in step 1
+- If you encounter secret permission errors, grant your Cloud Run service account the `roles/secretmanager.secretAccessor` role on the secrets
+- The scheduler will automatically use the new version on its next scheduled run
+
 ### Alternative: Gmail Push (advanced)
 
 For near real-time processing:
 - Set up Gmail `users.watch` to a Pub/Sub topic.
 - Make Cloud Run handle Pub/Sub push messages and process new emails.
 - Requires renewing the watch periodically and extra setup; use Scheduler + polling first.
-
-## Install Google Cloud SDK (gcloud)
-
-Required for deploying to Cloud Run and managing secrets.
-
-### Windows (PowerShell)
-
-**Option 1: Using winget (recommended)**
-```powershell
-winget install --id Google.CloudSDK -e
-```
-
-**Option 2: Download installer**
-1. Go to [Google Cloud SDK installer](https://cloud.google.com/sdk/docs/install)
-2. Download and run the Windows installer
-3. Follow the installation wizard
-
-**After installation:**
-```powershell
-# Restart PowerShell, then verify
-gcloud --version
-
-# Initialize (login and set project)
-gcloud init
-```
-
-### macOS (Terminal)
-
-**Option 1: Using Homebrew (recommended)**
-```bash
-brew install --cask google-cloud-sdk
-
-# Add to shell profile (choose one)
-# For bash:
-echo 'source "$(brew --prefix)/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/path.bash.inc"' >> ~/.bash_profile
-source ~/.bash_profile
-
-# For zsh:
-echo 'source "$(brew --prefix)/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/path.zsh.inc"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-**Option 2: Interactive installer**
-```bash
-# Download and install
-curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-darwin-x86_64.tar.gz
-tar -xzf google-cloud-cli-*.tar.gz
-./google-cloud-sdk/install.sh
-
-# Restart shell
-exec -l $SHELL
-```
-
-**After installation:**
-```bash
-# Verify installation
-gcloud --version
-
-# Initialize (login and set project)
-gcloud init
-```
-
-### Troubleshooting
-
-**If gcloud is not recognized:**
-- **Windows**: Ensure `C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin` is in your PATH
-- **macOS**: Source the path files as shown above, or restart your terminal
-
-**First-time setup:**
-```bash
-# Login to Google Cloud
-gcloud auth login
-
-# Set your project
-gcloud config set project YOUR_PROJECT_ID
-
-# Enable required APIs
-gcloud services enable run.googleapis.com
-gcloud services enable cloudbuild.googleapis.com
-gcloud services enable secretmanager.googleapis.com
-gcloud services enable cloudscheduler.googleapis.com
-```
-
-### Required APIs
-
-Enable these APIs for the journal club bot:
-```bash
-gcloud services enable run.googleapis.com
-gcloud services enable cloudbuild.googleapis.com
-gcloud services enable secretmanager.googleapis.com
-gcloud services enable cloudscheduler.googleapis.com
-```
-
-Notes:
-- Installation creates a new revision each time you update env vars.
-- Keep your project ID handy for all gcloud commands.
 
 ## What Each File Does
 
@@ -586,45 +505,3 @@ Notes:
 
 ### Configuration Files
 - **`config
-\n+## Update and Redeploy (Cloud Run)
-\n+When you change code or configuration, rebuild the container image and redeploy the Cloud Run service.
-\n+### 1) Rebuild the image
-```bash
-PROJECT_ID=$(gcloud config get-value project)
-gcloud builds submit --tag gcr.io/$PROJECT_ID/jc-bot
-```
-\n+### 2) Redeploy to Cloud Run
-```bash
-REGION=us-central1
-gcloud run deploy jc-bot \
-  --image gcr.io/$PROJECT_ID/jc-bot \
-  --region $REGION \
-  --allow-unauthenticated
-```
-\n+### 3) Verify the new revision
-```bash
-gcloud run services describe jc-bot --region=$REGION --format='value(status.url)'
-curl -X GET "$(gcloud run services describe jc-bot --region=$REGION --format='value(status.url)')/healthz"
-```
-To trigger a run immediately:
-```bash
-gcloud scheduler jobs run jc-bot-every-10m --location=$REGION
-```
-\n+### 4) If you changed dependencies
-Update `requirements.txt` first; the build step will install new packages automatically during `gcloud builds submit`.
-\n+### 5) If you changed OAuth tokens or client secret
-Update Secret Manager so Cloud Run reads the latest versions:
-```bash
-gcloud secrets versions add jc-client-secret --data-file=tokens/client_secret.json
-gcloud secrets versions add jc-token --data-file=tokens/token.json
-```
-No redeploy is required for new secret versions; redeploy only if you changed secret names or env var mappings.
-\n+### 6) Common checks
-- Confirm project: `gcloud config get-value project`
-- Confirm image exists: `gcloud container images list-tags gcr.io/$PROJECT_ID/jc-bot`
-- Get service URL: `gcloud run services describe jc-bot --region=$REGION --format='value(status.url)'`
-\n+### 7) Roll back (if needed)
-```bash
-gcloud run revisions list --service=jc-bot --region=$REGION
-gcloud run services update-traffic jc-bot --to-revisions REVISION_NAME=100 --region=$REGION
-```
