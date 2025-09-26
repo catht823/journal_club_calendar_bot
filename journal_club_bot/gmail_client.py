@@ -20,13 +20,24 @@ def _load_settings(settings_path: Path) -> dict:
     return cfg
 
 def fetch_labeled_messages(gmail, settings_path: Path, state) -> List[Dict[str, Any]]:
+    import logging
     cfg = _load_settings(settings_path)
     source_label = cfg.get("source_label", "buffer-label")
     lookback_days = int(cfg.get("lookback_days", 14))
     max_messages = int(cfg.get("max_messages", 50))
-    query = f"label:{source_label} newer_than:{lookback_days}d"
+    
+    if lookback_days > 0:
+        query = f"label:{source_label} newer_than:{lookback_days}d"
+    else:
+        query = f"label:{source_label}"
+    
+    logging.info(f"Gmail query: {query}")
+    logging.info(f"Searching for label: {source_label}, lookback_days: {lookback_days}")
+    
     results = gmail.users().messages().list(userId="me", q=query, maxResults=max_messages).execute()
-    return results.get("messages", [])
+    messages = results.get("messages", [])
+    logging.info(f"Found {len(messages)} messages")
+    return messages
 
 def _decode_subject(headers: List[Dict[str, str]]) -> str:
     subject_vals = [h["value"] for h in headers if h.get("name") == "Subject"]
@@ -37,19 +48,33 @@ def _decode_subject(headers: List[Dict[str, str]]) -> str:
         out += text.decode(enc or "utf-8", errors="replace") if isinstance(text, bytes) else text
     return out
 
-def extract_message_payload(gmail, message_id: str) -> Tuple[str, str, Optional[str]]:
+def extract_message_payload(gmail, message_id: str) -> Tuple[str, str, Optional[str], List[Dict[str, str]]]:
     msg = gmail.users().messages().get(userId="me", id=message_id, format="full").execute()
     headers = msg["payload"].get("headers", [])
     subject = _decode_subject(headers)
 
     body_text = ""
     html = None
+    attachments = []
 
     def walk_parts(part):
-        nonlocal body_text, html
+        nonlocal body_text, html, attachments
         mime = part.get("mimeType")
         data = part.get("body", {}).get("data")
         parts = part.get("parts")
+        
+        # Extract attachments
+        if part.get("filename"):
+            filename = part.get("filename")
+            attachment_id = part.get("body", {}).get("attachmentId")
+            if attachment_id:
+                attachments.append({
+                    "filename": filename,
+                    "mimeType": mime,
+                    "attachmentId": attachment_id,
+                    "size": part.get("body", {}).get("size", 0)
+                })
+        
         if mime == "text/plain" and data:
             body_text += base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
         elif mime == "text/html" and data:
@@ -59,4 +84,4 @@ def extract_message_payload(gmail, message_id: str) -> Tuple[str, str, Optional[
                 walk_parts(p)
 
     walk_parts(msg["payload"])
-    return subject, body_text, html
+    return subject, body_text, html, attachments

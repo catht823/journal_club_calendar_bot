@@ -13,6 +13,7 @@ class ParsedEvent:
     url: Optional[str] = None
     abstract: Optional[str] = None
     cancelled: bool = False
+    attachments: Optional[List[Dict[str, str]]] = None
 
 @dataclass
 class Services:
