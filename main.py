@@ -11,6 +11,7 @@ from journal_club_bot.calendar_client import (
     ensure_category_calendars,
     upsert_event_to_calendars,
     delete_event_from_calendars,
+    handle_event_update,
 )
 from journal_club_bot.storage import StateStore, MessageEventMap
 
@@ -51,16 +52,23 @@ def run_once() -> None:
             state.mark_processed(msg_id, MessageEventMap(message_id=msg_id, category_to_event_ids={}))
             continue
 
-        combined_text = f"{subject}\n\n{parsed.title}\n\n{parsed.abstract or ''}"
-        category_names = categorize_text(categories, combined_text)
-        if not category_names and categories.fallback_category:
-            category_names = [categories.fallback_category]
+        # Handle different types of emails
+        if parsed.email_type in ["update", "cancellation", "reminder"]:
+            # Handle updates to existing events
+            mapping = handle_event_update(calendar, categories, parsed, msg_id, state)
+            state.mark_processed(msg_id, mapping)
+        else:
+            # Handle new events
+            combined_text = f"{subject}\n\n{parsed.title}\n\n{parsed.abstract or ''}"
+            category_names = categorize_text(categories, combined_text)
+            if not category_names and categories.fallback_category:
+                category_names = [categories.fallback_category]
 
-        mapping = upsert_event_to_calendars(calendar, categories, category_names, parsed, msg_id, state)
-        state.mark_processed(msg_id, mapping)
+            mapping = upsert_event_to_calendars(calendar, categories, category_names, parsed, msg_id, state)
+            state.mark_processed(msg_id, mapping)
 
-        if parsed.cancelled:
-            delete_event_from_calendars(calendar, mapping)
+            if parsed.cancelled:
+                delete_event_from_calendars(calendar, mapping)
 
 
 def main() -> None:

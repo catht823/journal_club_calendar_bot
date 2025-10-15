@@ -1,12 +1,25 @@
 import re
 import logging
 from datetime import timedelta, datetime
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple, List, Dict, Any
 import dateparser
 from bs4 import BeautifulSoup
 from pathlib import Path
 import yaml
 from .models import ParsedEvent
+
+# Common academic/research keywords for scoring
+ACADEMIC_KEYWORDS = [
+    'mechanism', 'pathway', 'regulation', 'function', 'structure', 'dynamics',
+    'interaction', 'signaling', 'cascade', 'network', 'system', 'process',
+    'model', 'approach', 'method', 'technique', 'analysis', 'characterization',
+    'identification', 'discovery', 'development', 'application', 'implication',
+    'role', 'effect', 'impact', 'influence', 'contribution', 'advance',
+    'progress', 'breakthrough', 'finding', 'result', 'outcome', 'neural',
+    'brain', 'cognitive', 'molecular', 'cellular', 'genetic', 'protein',
+    'cell', 'tissue', 'organ', 'disease', 'therapy', 'treatment', 'drug',
+    'virus', 'bacteria', 'immune', 'cancer', 'tumor', 'metabolism', 'gene'
+]
 
 def _load_settings(settings_path: Path) -> dict:
     with open(settings_path, "r", encoding="utf-8") as f:
@@ -62,173 +75,220 @@ def _clean_title_punctuation(title: str) -> str:
     logging.info(f"Final cleaned title: '{title}'")
     return title
 
-def _extract_title(text: str, subject: str) -> str:
-    """Extract talk title with multiple strategies, prioritizing actual talk titles over email subjects"""
+def _is_likely_title(text: str) -> bool:
+    """Check if text is likely a title vs metadata"""
+    if not text or len(text) < 5:
+        return False
     
-    # Strategy 1: Look for explicit title fields (highest priority)
-    title = _extract_line(["Title", "Topic", "Subject", "Talk", "Presentation", "Seminar", "Talk Title", "Presentation Title"], text)
-    if title and len(title) > 5:
-        logging.info(f"Found explicit title field: '{title}'")
-        return title
-
-    # Strategy 2: Look for talk/presentation patterns
-    talk_patterns = [
-        r'(?:title|topic|subject|talk|presentation|seminar)\\s*[:\\-]\\s*(.+?)(?:\\n|$)',
-        r'(?:talk|presentation|seminar)\\s+(?:title|about)\\s*[:\\-]\\s*(.+?)(?:\\n|$)',
-        r'(?:presented by|by)\\s+(.+?)(?:\\n|$)',
-        r'(?:speaker|presenter)\\s*[:\\-]\\s*(.+?)(?:\\n|$)',
-        r'(?:will present|presents|will give|gives)\\s+(?:a talk on|a presentation on|about)\\s+(.+?)(?:\\n|$)',
-        r'(?:discussing|covering|about)\\s+(.+?)(?:\\n|$)',
-        # Look for seminar series titles (often in caps)
-        r'(?:seminar series|guest|speaker)\\s*[:\\-]\\s*(.+?)(?:\\n|$)',
-        r'(?:igc|igm|igem)\\s+(?:seminar|series)\\s*[:\\-]\\s*(.+?)(?:\\n|$)',
-    ]
-
-    for pattern in talk_patterns:
-        matches = re.findall(pattern, text, re.IGNORECASE | re.DOTALL)
-        if matches:
-            title = matches[0].strip()
-            # Clean up the title
-            title = re.sub(r'^(?:a|an|the)\\s+', '', title, flags=re.IGNORECASE)  # Remove articles
-            title = title.strip('.,;:')  # Remove trailing punctuation
-            if len(title) > 5 and len(title) < 200:  # Reasonable title length
-                logging.info(f"Found talk pattern title: '{title}'")
-                return title
-
-    # Strategy 3: Look for quoted titles or titles in quotes (but avoid speaker names and email addresses)
-    quoted_patterns = [
-        r'["\']([^"\']{15,200})["\']',  # Text in quotes (longer to avoid names)
-        r'"(.*?)"',  # Text in double quotes
-        r"'(.*?)'",  # Text in single quotes
+    # Reject if it's clearly not a title
+    reject_patterns = [
+        r'^\s*(?:from|to|date|subject|cc|bcc|sent|received)\\s*:',  # Email headers
+        r'@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',  # Contains email
+        r'^[A-Z][a-z]+,?\s+[A-Z][a-z]+$',  # Just a name
+        r'^(?:dr|prof|professor)\\.?\\s+[a-z\s]+$',  # "Dr. Name"
+        r'\\d{1,2}[:/]\\d{1,2}',  # Date/time patterns
+        r'^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)',  # Day names
+        r'^(?:january|february|march|april|may|june|july|august|september|october|november|december)',  # Month names
+        r'^(?:location|room|building|hall|venue|place)\\s*:',  # Location fields
+        r'^(?:when|where|time|date)\\s*:',  # Metadata fields
     ]
     
-    for pattern in quoted_patterns:
-        matches = re.findall(pattern, text, re.IGNORECASE | re.DOTALL)
-        for match in matches:
-            match = match.strip()
-            # Skip if it looks like a speaker name, email address, or metadata
-            if (len(match) > 15 and len(match) < 200 and 
-                not re.match(r'^[A-Z][a-z]+,\s*[A-Z][a-z]+$', match) and  # "Last, First" pattern
-                not re.match(r'^(?:dr|prof|professor)\s+[a-z\s]+$', match, re.IGNORECASE) and  # "Dr. Name" pattern
-                not re.match(r'^[a-z\s]+$', match) and  # All lowercase (likely a name)
-                not re.search(r'(?:speaker|presenter|presented by)', match, re.IGNORECASE) and  # Contains speaker keywords
-                not re.search(r'@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', match) and  # Contains email addresses
-                not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', match) and  # Is an email address
-                not re.search(r'(?:via|from|to|cc|bcc|sent|received)', match, re.IGNORECASE) and  # Contains email headers
-                not re.search(r'<[^>]*@[^>]*>', match) and  # Contains email in angle brackets
-                not re.match(r'^[a-zA-Z0-9@._-]+$', match)):  # Just metadata characters
-                
-                # Clean up the title by removing header prefixes and punctuation
-                cleaned_title = match
-                # Remove patterns like "*Title:*", "*Seminar Title:*", "*Topic:*", etc.
-                cleaned_title = re.sub(r'^\*?(?:title|topic|subject|talk|presentation|seminar\s+title)\s*[:*]\s*', '', cleaned_title, flags=re.IGNORECASE)
-                # Remove quotes if they wrap the entire title or are at the start/end
-                cleaned_title = re.sub(r'^["\'](.+)["\']$', r'\1', cleaned_title)  # Full wrapping quotes
-                cleaned_title = re.sub(r'^["\']', '', cleaned_title)  # Leading quotes
-                cleaned_title = re.sub(r'["\']$', '', cleaned_title)  # Trailing quotes
-                # Apply generalized punctuation cleaning
-                cleaned_title = _clean_title_punctuation(cleaned_title)
-                
-                if cleaned_title and len(cleaned_title) > 5:
-                    logging.info(f"Found quoted title: '{cleaned_title}'")
-                    return cleaned_title
+    for pattern in reject_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            return False
+    
+    return True
 
-    # Strategy 4: Look for lines that look like talk titles (often in caps or specific format)
-    lines = text.split('\n')
-    for i, line in enumerate(lines[:20]):  # Check first 20 lines
+def _score_title_candidate(text: str) -> int:
+    """Score a title candidate based on various heuristics"""
+    score = 0
+    words = text.split()
+    word_count = len(words)
+    
+    # Ideal length: 4-15 words
+    if 5 <= word_count <= 12:
+        score += 30
+    elif 4 <= word_count <= 15:
+        score += 20
+    elif 3 <= word_count <= 20:
+        score += 10
+    
+    # Title case bonus
+    if re.match(r'^[A-Z]', text):
+        score += 15
+    
+    # Academic/research keywords
+    text_lower = text.lower()
+    keyword_count = sum(1 for kw in ACADEMIC_KEYWORDS if kw in text_lower)
+    score += min(keyword_count * 10, 40)  # Cap at 40
+    
+    # Not a complete sentence (no verbs like "will", "please", "join")
+    if not re.search(r'\\b(?:will|would|should|could|please|join|invite|we|you|us)\\b', text_lower):
+        score += 10
+    
+    # Contains scientific/technical terms
+    if re.search(r'\\b(?:via|through|during|using|based|novel|new|recent|current)\\b', text_lower):
+        score += 5
+    
+    return score
+
+def _extract_title(text: str, subject: str, html: Optional[str] = None) -> str:
+    """
+    Extract talk title using multi-strategy approach with intelligent scoring.
+    Prioritizes: quotes, colons, bold/formatting, then contextual analysis.
+    """
+    candidates = []
+    
+    # Parse HTML for better structure detection
+    soup = None
+    if html:
+        soup = BeautifulSoup(html, 'lxml')
+    
+    # === STRATEGY 1: Quoted Text (Score: 100) ===
+    quote_patterns = [
+        (r'"([^"]{8,300})"', 100),  # Double quotes
+        (r"'([^']{8,300})'", 98),  # Single quotes
+        (r'["""]([^"""]{8,300})["""]', 100),  # Smart double quotes
+    ]
+    
+    for pattern, base_score in quote_patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            title = match.group(1).strip()
+            if _is_likely_title(title):
+                score = base_score + _score_title_candidate(title)
+                candidates.append((title, score, "quoted"))
+    
+    # === STRATEGY 2: Text After Colons (Score: 90-95) ===
+    colon_patterns = [
+        # "X will present a paper: TITLE"
+        (r'(?:[A-Z][a-z]+\\s+[A-Z][a-z]+)\\s+(?:will present|presents|is presenting)\\s+(?:a\\s+)?(?:paper|talk|presentation)\\s*[:\\-]\\s*([^\\n]{8,300})', 95),
+        # "will present: TITLE" or "presents: TITLE"
+        (r'(?:will present|presents|presenting)\\s+(?:a\\s+)?(?:paper|talk|presentation|on)\\s*[:\\-]\\s*([^\\n]{8,300})', 94),
+        # "Title: TITLE" or "Topic: TITLE"
+        (r'(?:^|\\n)\\s*(?:title|topic|subject)\\s*[:\\-]\\s*([^\\n]{8,300})', 93),
+        # "Talk/Seminar/Presentation Title: TITLE"
+        (r'(?:talk|seminar|presentation|lecture)\\s+(?:title|topic)\\s*[:\\-]\\s*([^\\n]{8,300})', 92),
+        # "entitled/titled: TITLE"
+        (r'(?:entitled|titled)\\s*[:\\-]\\s*([^\\n]{8,300})', 91),
+        # Generic "paper: TITLE", "talk: TITLE"
+        (r'(?:paper|talk|presentation|seminar|lecture)\\s*[:\\-]\\s*([^\\n]{8,300})', 85),
+    ]
+    
+    for pattern, base_score in colon_patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            title = match.group(1).strip()
+            # Remove leading articles
+            title = re.sub(r'^(?:a|an|the)\\s+', '', title, flags=re.IGNORECASE)
+            title = title.strip('.,;:')
+            
+            if _is_likely_title(title):
+                score = base_score + _score_title_candidate(title)
+                candidates.append((title, score, "colon"))
+    
+    # === STRATEGY 3: HTML Formatting (Score: 75-90) ===
+    if soup:
+        # Check for bold/strong tags
+        for tag in soup.find_all(['b', 'strong']):
+            title = tag.get_text(strip=True)
+            if _is_likely_title(title) and len(title) >= 8:
+                score = 85 + _score_title_candidate(title)
+                candidates.append((title, score, "html_bold"))
+        
+        # Check for italic/em tags
+        for tag in soup.find_all(['i', 'em']):
+            title = tag.get_text(strip=True)
+            if _is_likely_title(title) and len(title) >= 8:
+                score = 80 + _score_title_candidate(title)
+                candidates.append((title, score, "html_italic"))
+        
+        # Check for larger font sizes
+        for tag in soup.find_all(style=re.compile(r'font-size\s*:\s*\d+p[tx]', re.IGNORECASE)):
+            title = tag.get_text(strip=True)
+            if _is_likely_title(title) and len(title) >= 8:
+                score = 75 + _score_title_candidate(title)
+                candidates.append((title, score, "html_font"))
+    
+    # === STRATEGY 4: Markdown Formatting (Score: 70-85) ===
+    markdown_patterns = [
+        (r'\\*\\*([^*]{8,300})\\*\\*', 85),  # **bold**
+        (r'__([^_]{8,300})__', 85),  # __bold__
+        (r'\\*([^*]{8,300})\\*', 80),  # *italic*
+        (r'_([^_]{8,300})_', 80),  # _italic_
+        (r'^#{1,3}\\s+(.{8,300})$', 90),  # # Header
+    ]
+    
+    for pattern, base_score in markdown_patterns:
+        for match in re.finditer(pattern, text, re.MULTILINE):
+            title = match.group(1).strip()
+            if _is_likely_title(title):
+                score = base_score + _score_title_candidate(title)
+                candidates.append((title, score, "markdown"))
+    
+    # === STRATEGY 5: Line Analysis (Score: 40-70) ===
+    lines = text.split('\\n')
+    for i, line in enumerate(lines[:50]):  # Check first 50 lines
         line = line.strip()
         
-        # Skip email headers and common non-title patterns
-        if (len(line) > 15 and len(line) < 200 and 
-            not re.match(r'^(?:from|to|date|subject|cc|bcc|sent|received|message-id|x-|return-path|reply-to)', line, re.IGNORECASE) and
-            not re.match(r'^\d{4}-\d{2}-\d{2}', line) and  # Skip date lines
-            not re.match(r'^\d{1,2}/\d{1,2}/\d{2,4}', line) and  # Skip date lines
-            not re.match(r'^\d{1,2}-\d{1,2}-\d{2,4}', line) and  # Skip date lines with dashes
-            not '-----Original Message-----' in line and
-            not 'Begin forwarded message' in line and
-            not 'On .* wrote:' in line and
-            not re.match(r'^(?:dear|hello|hi|greetings)', line, re.IGNORECASE) and  # Skip greetings
-            not re.match(r'^(?:thank you|thanks|regards|best)', line, re.IGNORECASE) and  # Skip closings
-            not re.match(r'^(?:please join|join us|you are invited|invitation|seminar announcement)', line, re.IGNORECASE) and  # Skip invitations
-            not re.match(r'^(?:upcoming|this week|next week|reminder)', line, re.IGNORECASE) and  # Skip announcements
-            not re.match(r'^(?:the school of|department of|center for)', line, re.IGNORECASE) and  # Skip institutional names
-            not re.match(r'^(?:we are pleased|it is our pleasure|we invite)', line, re.IGNORECASE) and  # Skip formal invitations
-            not re.match(r'^(?:date|time|when|where|location)', line, re.IGNORECASE) and  # Skip date/time headers
-            not re.match(r'^\*?(?:location|where|venue|place)\s*[:*]', line, re.IGNORECASE) and  # Skip location lines (with or without asterisk)
-            not re.match(r'^\*?(?:speaker|presenter|presented by|by)\s*[:*]', line, re.IGNORECASE) and  # Skip speaker lines
-            not re.match(r'^\*?(?:title|topic|subject|talk|presentation|seminar)\s*[:*]', line, re.IGNORECASE) and  # Skip title header lines
-            not re.match(r'^\*?(?:date|time|when|schedule)\s*[:*]', line, re.IGNORECASE) and  # Skip date/time header lines
-            not re.match(r'^\*?(?:abstract|summary|description)\s*[:*]', line, re.IGNORECASE) and  # Skip abstract header lines
-            not re.match(r'^\*?(?:contact|email|phone|website|url)\s*[:*]', line, re.IGNORECASE) and  # Skip contact header lines
-            not re.match(r'^\*?(?:host|organizer|coordinator)\s*[:*]', line, re.IGNORECASE) and  # Skip host header lines
-            not re.match(r'^\*?(?:zoom|meeting|link|join)\s*[:*]', line, re.IGNORECASE) and  # Skip meeting link lines
-            not re.search(r'(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)', line, re.IGNORECASE) and  # Skip lines with day names
-            not re.search(r'(?:january|february|march|april|may|june|july|august|september|october|november|december)', line, re.IGNORECASE) and  # Skip lines with month names
-            not re.search(r'\d{1,2}:\d{2}', line) and  # Skip lines with time patterns
-            not re.search(r'\d{1,2}/\d{1,2}/\d{2,4}', line) and  # Skip lines with date patterns
-            not re.search(r'\d{4}-\d{2}-\d{2}', line) and  # Skip lines with ISO date patterns
-            not re.match(r'^[A-Z][a-z]+,\s*[A-Z][a-z]+$', line) and  # Skip "Last, First" names
-            not re.match(r'^(?:dr|prof|professor)\s+[a-z\s]+$', line, re.IGNORECASE) and  # Skip "Dr. Name" patterns
-            not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', line) and  # Skip email addresses
-            not re.match(r'^[a-zA-Z0-9@._-]+$', line) and  # Skip lines that are just metadata characters
-            not re.search(r'@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', line) and  # Skip lines containing email addresses
-            not re.match(r'^(?:fwd|fw|re|fyi)', line, re.IGNORECASE)):  # Skip forwarding prefixes
+        # Skip short lines and obvious non-titles
+        if len(line) < 10 or len(line) > 300:
+            continue
+        
+        # Skip header lines with colons (they're just field names)
+        if re.match(r'^(?:title|speaker|location|time|date|when|where|abstract|summary)\\s*:', line, re.IGNORECASE):
+            continue
+        
+        # Skip lines with common email patterns
+        if re.search(r'(?:dear|hello|regards|sincerely|thank you|please join|you are invited)', line, re.IGNORECASE):
+            continue
+        
+        if _is_likely_title(line):
+            score = 50 + _score_title_candidate(line)
             
-            # Prioritize lines that look like actual talk titles
-            if (re.match(r'^[A-Z][^.!?]*[A-Z]', line) or  # Title case pattern (starts with capital, has another capital)
-                re.search(r'(?:seminar|talk|presentation|guest|lecture)', line, re.IGNORECASE) or  # Contains seminar keywords
-                (len(line.split()) >= 4 and len(line.split()) <= 15 and  # Multi-word but not too long
-                 not re.search(r'(?:will|would|should|could|can|may|might|please|join|invite)', line, re.IGNORECASE) and  # Not a sentence with modal verbs
-                 not re.search(r'(?:the school|department|center|university)', line, re.IGNORECASE))):  # Not institutional text
-                
-                       # Check if this might be a multi-line title by looking at the next line
-                       potential_title = line
-                       if i + 1 < len(lines):
-                           next_line = lines[i + 1].strip()
-                           # If next line looks like a continuation (starts with lowercase, no punctuation ending, etc.)
-                           if (next_line and len(next_line) > 5 and len(next_line) < 100 and
-                               not re.search(r'^\d+:\d+', next_line) and  # Not a time
-                               not re.search(r'^\d{1,2}/\d{1,2}/\d{2,4}', next_line) and  # Not a date
-                               not re.match(r'^[A-Z][a-z]+,\s*[A-Z][a-z]+$', next_line) and  # Not a name
-                               not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', next_line) and  # Not an email
-                               not re.search(r'@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', next_line) and  # Not containing email
-                               not re.match(r'^(?:fwd|fw|re|fyi)', next_line, re.IGNORECASE) and  # Not forwarding
-                               (next_line[0].islower() or  # Starts with lowercase (continuation)
-                                re.match(r'^[A-Z][a-z]+', next_line))):  # Or starts with proper case
-                               potential_title = line + " " + next_line
-                               logging.info(f"Combined multi-line title: '{potential_title}'")
-                       
-                       # Clean up the title by removing header prefixes and punctuation
-                       cleaned_title = potential_title
-                       # Remove patterns like "*Title:*", "*Seminar Title:*", "*Topic:*", etc.
-                       cleaned_title = re.sub(r'^\*?(?:title|topic|subject|talk|presentation|seminar\s+title)\s*[:*]\s*', '', cleaned_title, flags=re.IGNORECASE)
-                       # Remove quotes if they wrap the entire title or are at the start/end
-                       cleaned_title = re.sub(r'^["\'](.+)["\']$', r'\1', cleaned_title)  # Full wrapping quotes
-                       cleaned_title = re.sub(r'^["\']', '', cleaned_title)  # Leading quotes
-                       cleaned_title = re.sub(r'["\']$', '', cleaned_title)  # Trailing quotes
-                       # Apply generalized punctuation cleaning
-                       logging.info(f"Before punctuation cleaning: '{cleaned_title}'")
-                       cleaned_title = _clean_title_punctuation(cleaned_title)
-                       logging.info(f"After punctuation cleaning: '{cleaned_title}'")
-                       logging.info(f"Final cleaned title length: {len(cleaned_title)}")
-                       
-                       if cleaned_title and len(cleaned_title) > 5:
-                           logging.info(f"Found substantial line title: '{cleaned_title}'")
-                           return cleaned_title
-
-    # Strategy 5: Use subject line as fallback (but clean it up)
-    if subject and len(subject) > 5 and len(subject) < 200:
-        # Clean up subject - remove common email prefixes
-        clean_subject = re.sub(r'^(?:re|fw|fwd|fyi)\\s*[:\\-]\\s*', '', subject, flags=re.IGNORECASE)
-        clean_subject = re.sub(r'^(?:journal club|seminar|talk)\\s*[:\\-]\\s*', '', clean_subject, flags=re.IGNORECASE)
-        # Apply generalized punctuation cleaning
-        clean_subject = _clean_title_punctuation(clean_subject)
-        if len(clean_subject) > 5:
-            logging.info(f"Using cleaned subject as title: '{clean_subject}'")
-            return clean_subject
-
-    # Strategy 6: Default fallback
-    logging.info("No title found, using default")
+            # Bonus for position (earlier lines more likely)
+            if i < 10:
+                score += 10
+            elif i < 20:
+                score += 5
+            
+            candidates.append((line, score, "line_analysis"))
+    
+    # === STRATEGY 6: Subject Line (Score: 30-50) ===
+    if subject and len(subject) > 5:
+        clean_subject = subject
+        # Remove common prefixes
+        clean_subject = re.sub(r'^(?:re|fw|fwd|fyi)\\s*[:\\-]\\s*', '', clean_subject, flags=re.IGNORECASE)
+        clean_subject = re.sub(r'^(?:journal club|seminar|talk|presentation|lecture|guest speaker|announcement)\\s*[:\\-]?\\s*', '', clean_subject, flags=re.IGNORECASE)
+        # Remove date/time patterns
+        clean_subject = re.sub(r'\\s*-\\s*\\d{1,2}/\\d{1,2}(/\\d{2,4})?', '', clean_subject)
+        clean_subject = re.sub(r'\\s*\\d{1,2}/\\d{1,2}(/\\d{2,4})?\\s*-?\\s*', '', clean_subject)
+        clean_subject = re.sub(r'\\s+', ' ', clean_subject).strip()
+        
+        if _is_likely_title(clean_subject) and len(clean_subject) > 5:
+            score = 40 + _score_title_candidate(clean_subject)
+            candidates.append((clean_subject, score, "subject"))
+    
+    # === FINAL SELECTION ===
+    if candidates:
+        # Remove duplicates (same text, different strategies)
+        seen = {}
+        for title, score, strategy in candidates:
+            title_norm = re.sub(r'\\s+', ' ', title.lower().strip())
+            if title_norm not in seen or seen[title_norm][1] < score:
+                seen[title_norm] = (title, score, strategy)
+        
+        unique_candidates = list(seen.values())
+        unique_candidates.sort(key=lambda x: (-x[1], -len(x[0])))
+        
+        best_title, best_score, best_strategy = unique_candidates[0]
+        
+        logging.info(f"✅ Selected title: '{best_title}' (score={best_score}, strategy={best_strategy})")
+        if len(unique_candidates) > 1:
+            logging.info(f"   Other candidates: {[(c[0][:40]+'...', c[1], c[2]) for c in unique_candidates[1:3]]}")
+        
+        return _clean_title_punctuation(best_title)
+    
+    # Ultimate fallback
+    logging.warning("⚠️ No title found, using default")
     return "Journal Club"
 
 def _extract_speaker(text: str) -> Optional[str]:
@@ -254,6 +314,161 @@ def _extract_speaker(text: str) -> Optional[str]:
                 return speaker
     
     return None
+
+def _extract_location(text: str) -> Optional[str]:
+    """Extract location information with intelligent scoring and bracket handling"""
+    
+    # Collect all potential locations with scores
+    candidates = []
+    
+    # Strategy 1: Look for explicit location fields (highest priority)
+    explicit_locations = _extract_line(["Location", "Where", "Room", "Venue", "Place", "Address", "Building", "Hall", "Auditorium", "Conference Room", "Meeting Room"], text)
+    if explicit_locations and len(explicit_locations) > 2:
+        candidates.append((explicit_locations, 100))  # Highest score
+    
+    # Strategy 2: Look for location patterns throughout the entire text
+    location_patterns = [
+        r'(?:location|where|room|venue|place|address|building|hall|auditorium)\\s*[:\\-]\\s*(.+?)(?:\\n|$)',
+        r'(?:at|in)\\s+(.+?)(?:\\s+(?:room|hall|building|auditorium|conference|meeting))',
+        r'(?:room|hall|building|auditorium|conference|meeting)\\s+(?:number|#)?\\s*[:\\-]?\\s*(.+?)(?:\\n|$)',
+        r'(?:zoom|meeting|webinar)\\s+(?:link|url|id)\\s*[:\\-]\\s*(.+?)(?:\\n|$)',  # Virtual meetings
+        r'(?:join|meeting)\\s+(?:us|the)\\s+(?:at|in)\\s+(.+?)(?:\\n|$)',
+        r'(?:held|taking place|located)\\s+(?:at|in)\\s+(.+?)(?:\\n|$)',
+    ]
+    
+    for pattern in location_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE | re.DOTALL)
+        for match in matches:
+            location = match.strip()
+            # Clean up the location
+            location = re.sub(r'^(?:at|in)\\s+', '', location, flags=re.IGNORECASE)  # Remove leading prepositions
+            location = location.strip('.,;:')  # Remove trailing punctuation
+            
+            # Handle brackets and abbreviations properly
+            location = _clean_location_text(location)
+            
+            if len(location) > 2 and len(location) < 200:  # Reasonable location length
+                score = 80
+                if 'room' in pattern.lower() or 'building' in pattern.lower():
+                    score += 10
+                candidates.append((location, score))
+    
+    # Strategy 3: Look for common room/building patterns
+    room_patterns = [
+        r'(?:room|rm)\\s+(?:number|#)?\\s*[:\\-]?\\s*([a-z0-9\\-\\s]+?)(?:\\n|$)',  # Room 123, RM 456, etc.
+        r'(?:building|bldg)\\s+(?:number|#)?\\s*[:\\-]?\\s*([a-z0-9\\-\\s]+?)(?:\\n|$)',  # Building A, Bldg 1, etc.
+        r'(?:hall|auditorium)\\s+(?:number|#)?\\s*[:\\-]?\\s*([a-z0-9\\-\\s]+?)(?:\\n|$)',  # Hall 1, Auditorium A, etc.
+        r'([a-z]+\\s+\\d+[a-z]?)(?:\\s+(?:room|hall|building|auditorium))?',  # Building names like "Price Center 123"
+        r'(?:price center|student center|library|medical center|hospital)\\s+(?:room|hall|auditorium)?\\s*[:\\-]?\\s*([a-z0-9\\-\\s]+?)(?:\\n|$)',  # Common building names
+    ]
+    
+    for pattern in room_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE | re.DOTALL)
+        for match in matches:
+            location = match.strip()
+            location = _clean_location_text(location)
+            if len(location) > 1 and len(location) < 100:
+                score = 70
+                if any(word in location.lower() for word in ['room', 'hall', 'building', 'center', 'library']):
+                    score += 15
+                candidates.append((location, score))
+    
+    # Strategy 4: Look for virtual meeting indicators
+    virtual_patterns = [
+        r'(?:zoom|webex|teams|google meet|virtual)\\s+(?:meeting|link|url|id)\\s*[:\\-]\\s*(.+?)(?:\\n|$)',
+        r'(?:meeting|webinar)\\s+(?:link|url|id)\\s*[:\\-]\\s*(.+?)(?:\\n|$)',
+        r'(?:join|participate)\\s+(?:via|using)\\s+(?:zoom|webex|teams|google meet)\\s*[:\\-]\\s*(.+?)(?:\\n|$)',
+    ]
+    
+    for pattern in virtual_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE | re.DOTALL)
+        for match in matches:
+            location = match.strip()
+            location = _clean_location_text(location)
+            if len(location) > 5 and len(location) < 200:
+                score = 60
+                candidates.append((f"Virtual: {location}", score))
+    
+    # Strategy 5: Analyze all lines for location-like information
+    lines = text.split('\n')
+    for line in lines[:20]:  # Check first 20 lines
+        line = line.strip()
+        
+        # Skip obvious non-location lines
+        if (len(line) < 5 or len(line) > 150 or
+            re.match(r'^(?:from|to|date|subject|cc|bcc|sent|received|message-id|x-|return-path)', line, re.IGNORECASE) or
+            re.match(r'^\d{4}-\d{2}-\d{2}', line) or  # Skip date lines
+            re.match(r'^\d{1,2}/\d{1,2}/\d{2,4}', line) or  # Skip date lines
+            re.search(r'\d{1,2}:\d{2}', line) or  # Skip lines with time patterns
+            re.search(r'@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', line) or  # Skip lines containing email addresses
+            re.match(r'^(?:fwd|fw|re|fyi)', line, re.IGNORECASE)):  # Skip forwarding prefixes
+            continue
+            
+        # Score this line as a potential location
+        score = 0
+        
+        # Check for location keywords
+        location_keywords = ['room', 'hall', 'building', 'auditorium', 'conference', 'meeting', 'center', 'library', 'hospital', 'medical', 'price', 'student', 'zoom', 'webex', 'teams', 'google meet', 'virtual']
+        if any(word in line.lower() for word in location_keywords):
+            score += 30
+        
+        # Check for room/building number patterns
+        if re.search(r'(?:room|rm|hall|building|bldg)\\s*[#:]?\\s*\\d+', line, re.IGNORECASE):
+            score += 25
+        
+        # Check for building name patterns
+        if re.search(r'[a-z]+\\s+\\d+[a-z]?', line, re.IGNORECASE):
+            score += 20
+        
+        # Check for virtual meeting patterns
+        if re.search(r'(?:zoom|webex|teams|google meet|virtual)', line, re.IGNORECASE):
+            score += 15
+        
+        if score > 20:  # Only consider if score is reasonable
+            cleaned_line = _clean_location_text(line)
+            if cleaned_line and len(cleaned_line) > 3:
+                candidates.append((cleaned_line, score))
+    
+    # Final selection: Choose the highest scoring candidate
+    if candidates:
+        # Sort by score (highest first), then by length (prefer longer locations)
+        candidates.sort(key=lambda x: (-x[1], -len(x[0])))
+        best_location, best_score = candidates[0]
+        
+        logging.info(f"Selected location '{best_location}' with score {best_score} from {len(candidates)} candidates")
+        if len(candidates) > 1:
+            logging.info(f"Other candidates: {[(c[0][:50] + '...' if len(c[0]) > 50 else c[0], c[1]) for c in candidates[1:3]]}")
+        
+        return best_location
+    
+    return None
+
+def _clean_location_text(location: str) -> str:
+    """Clean location text by handling brackets, abbreviations, and common issues"""
+    if not location:
+        return location
+    
+    # Remove common prefixes
+    location = re.sub(r'^(?:at|in|located at|held at)\\s+', '', location, flags=re.IGNORECASE)
+    
+    # Handle brackets and parentheses - extract content inside brackets
+    # Pattern: "Building Name (Abbreviation)" -> "Building Name (Abbreviation)"
+    # Pattern: "Room 123 [Building A]" -> "Room 123, Building A"
+    # Pattern: "Price Center (PC)" -> "Price Center (PC)"
+    
+    # First, handle square brackets by converting to parentheses
+    location = re.sub(r'\[([^\]]+)\]', r'(\1)', location)
+    
+    # Clean up multiple spaces and punctuation
+    location = re.sub(r'\s+', ' ', location)  # Multiple spaces to single
+    location = re.sub(r'\s*,\s*', ', ', location)  # Clean up commas
+    location = re.sub(r'\s*\(\s*', ' (', location)  # Clean up opening parentheses
+    location = re.sub(r'\s*\)\s*', ') ', location)  # Clean up closing parentheses
+    
+    # Remove trailing punctuation
+    location = location.strip('.,;:')
+    
+    return location.strip()
 
 def _extract_date(text: str, tz: str) -> Optional[datetime]:
     """Extract date information only (no time) from text"""
@@ -303,10 +518,6 @@ def _extract_date(text: str, tz: str) -> Optional[datetime]:
         # Numeric date patterns (without time)
         r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
         r'(\d{1,2}\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4})',
-        
-        # Relative dates (only as last resort)
-        r'(?:today|tomorrow|next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))',
-        r'(?:this\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))',
     ]
     
     # Try each date pattern
@@ -433,6 +644,162 @@ def _extract_datetime(text: str, tz: str) -> Optional[datetime]:
         logging.info("No date or time found")
         return None
 
+def _detect_update_type(text: str) -> str:
+    """Detect if this email is a new announcement, update, cancellation, or reminder"""
+    text_lower = text.lower()
+    
+    # Check for cancellation patterns (HIGHEST PRIORITY)
+    cancellation_patterns = [
+        r'\b(?:cancelled|canceled)\b',
+        r'\b(?:will not take place|will not occur|not happening)\b',
+        r'\b(?:sorry|unfortunately).*\b(?:cancel|postpone)\b',
+        r'\b(?:due to|because of).*\b(?:cancel|postpone)\b',
+        r'\bhas been cancelled\b',
+        r'\bcancellation of\b',
+    ]
+    
+    for pattern in cancellation_patterns:
+        if re.search(pattern, text_lower):
+            logging.info(f"Detected cancellation via pattern: {pattern}")
+            return "cancellation"
+    
+    # Check for update/change patterns (HIGH PRIORITY)
+    update_patterns = [
+        r'\b(?:update|updated|change|changed|modification|modified|correction|corrected)\b',
+        r'\b(?:new time|new location|new date|new room|new venue)\b',
+        r'\b(?:different time|different location|different date|different room)\b',
+        r'\b(?:time change|location change|date change|schedule change|room change|venue change)\b',
+        r'\b(?:please note|note that|important|urgent|attention).*\b(?:change|update|modification)\b',
+        r'\b(?:moved to|changed to|rescheduled to|relocated to)\b',
+        r'\b(?:now (?:at|in|on|scheduled for))\b',
+        r'\b(?:has been moved|has been changed|has been rescheduled|has been relocated)\b',
+        r'\b(?:instead of|rather than).*\b(?:originally|previously)\b',
+        r'\b(?:the (?:location|time|date|room|venue) has)\b',
+    ]
+    
+    for pattern in update_patterns:
+        if re.search(pattern, text_lower):
+            logging.info(f"Detected update via pattern: {pattern}")
+            return "update"
+    
+    # Check for postponement (treat as update if new date given, else cancellation)
+    if re.search(r'\b(?:postponed|postpone|postponement)\b', text_lower):
+        # Check if new date is mentioned
+        if re.search(r'\b(?:new date|rescheduled to|moved to).*\b(?:january|february|march|april|may|june|july|august|september|october|november|december|\d{1,2}[/-]\d{1,2})\b', text_lower):
+            logging.info("Detected postponement with new date - treating as update")
+            return "update"
+        else:
+            logging.info("Detected postponement without new date - treating as cancellation")
+            return "cancellation"
+    
+    # Check for reminder patterns (LOWER PRIORITY)
+    reminder_patterns = [
+        r'\b(?:reminder|remind|don\'t forget|don\'t miss)\b',
+        r'\b(?:just a reminder|friendly reminder|quick reminder)\b',
+        r'\b(?:coming up|approaching|tomorrow|today).*\b(?:seminar|talk|presentation)\b',
+        r'\b(?:as a reminder)\b',
+    ]
+    
+    for pattern in reminder_patterns:
+        if re.search(pattern, text_lower):
+            logging.info(f"Detected reminder via pattern: {pattern}")
+            return "reminder"
+    
+    # Check for new announcement patterns
+    new_patterns = [
+        r'\b(?:announce|announcing|announcement)\b',
+        r'\b(?:invitation|invite|invited)\b',
+        r'\b(?:join us|please join)\b',
+        r'\b(?:we are pleased|pleased to announce)\b',
+        r'\b(?:upcoming|next).*\b(?:seminar|talk|presentation)\b',
+        r'\b(?:seminar|talk|presentation).*\b(?:will be|is scheduled)\b',
+    ]
+    
+    for pattern in new_patterns:
+        if re.search(pattern, text_lower):
+            return "new"
+    
+    # Default to new if no specific pattern matches
+    return "new"
+
+def _extract_original_event_identifier(text: str) -> Optional[str]:
+    """
+    Extract information that can help identify the original event for updates.
+    Returns a combination of title + speaker + date to uniquely identify events.
+    """
+    identifiers = []
+    
+    # Strategy 1: Extract title from the update email
+    # Look for "regarding X", "about X", "for the X talk"
+    reference_patterns = [
+        r'(?:regarding|about|concerning|for|update on).*?(?:seminar|talk|presentation|journal club).*?["\']([^"\']{10,200})["\']',  # Quoted reference
+        r'(?:regarding|about|concerning|for|update on).*?(?:seminar|talk|presentation|journal club).*?(?:titled|entitled|on|about)\\s+([^\\n]{10,200})(?:\\n|$)',
+        r'(?:the|our)\\s+(?:seminar|talk|presentation|journal club).*?(?:titled|entitled|on|about)\\s+([^\\n]{10,200})(?:\\n|$)',
+        r'(?:originally|previously)\\s+(?:scheduled|announced).*?(?:titled|entitled|on|about)\\s+([^\\n]{10,200})(?:\\n|$)',
+    ]
+    
+    for pattern in reference_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE | re.DOTALL)
+        if matches:
+            for match in matches:
+                ref = match.strip() if isinstance(match, str) else match[0].strip()
+                # Clean up
+                ref = ref.strip('.,;:')
+                if len(ref) > 8 and len(ref) < 200 and _is_likely_title(ref):
+                    identifiers.append(("title", ref))
+                    logging.info(f"Found original event title reference: '{ref}'")
+                    break
+        if identifiers:
+            break
+    
+    # Strategy 2: Look for speaker as identifier
+    speaker_patterns = [
+        r'(?:originally presented by|previously presented by|by)\\s+([A-Z][a-z]+\\s+[A-Z][a-z]+)',
+        r'(?:speaker|presenter)\\s*:?\\s*([A-Z][a-z]+\\s+[A-Z][a-z]+)',
+        r'(?:dr\.|prof\.|professor)\\s+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?)',
+    ]
+    
+    for pattern in speaker_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if matches:
+            speaker = matches[0].strip() if isinstance(matches[0], str) else matches[0][0].strip()
+            identifiers.append(("speaker", speaker))
+            logging.info(f"Found original event speaker reference: '{speaker}'")
+            break
+    
+    # Strategy 3: Look for original date reference
+    original_date_patterns = [
+        r'(?:originally scheduled for|previously scheduled for|was scheduled for)\\s+([^\\n]{10,100})',
+        r'(?:original date|previous date)\\s*:?\\s*([^\\n]{10,100})',
+    ]
+    
+    for pattern in original_date_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if matches:
+            date_ref = matches[0].strip()
+            identifiers.append(("date", date_ref))
+            logging.info(f"Found original event date reference: '{date_ref}'")
+            break
+    
+    # Build combined identifier
+    if identifiers:
+        # Prefer title-based identification, then speaker, then date
+        for id_type, id_value in identifiers:
+            if id_type == "title":
+                return id_value
+        
+        # If no title, combine speaker + date
+        id_parts = []
+        for id_type, id_value in identifiers:
+            id_parts.append(id_value)
+        
+        combined = " | ".join(id_parts)
+        logging.info(f"Combined event identifier: '{combined}'")
+        return combined
+    
+    logging.info("No original event identifier found")
+    return None
+
 def _clean_email_content(text: str) -> str:
     """Remove email forwarding headers and metadata to focus on actual content"""
     
@@ -535,7 +902,14 @@ def parse_event_from_text(subject: str, body_text: str, html: Optional[str], set
     logging.info(f"Parsing email: '{subject[:50]}...'")
     logging.info(f"Raw content length: {len(raw_content)}, Cleaned: {len(combined)}")
 
-    cancelled = bool(re.search(r"cancelled|canceled|postponed", combined, flags=re.IGNORECASE))
+    # Detect the type of email (new, update, cancellation, reminder)
+    email_type = _detect_update_type(combined)
+    cancelled = (email_type == "cancellation")
+    
+    # Extract original event identifier for updates
+    original_event_ref = None
+    if email_type in ["update", "cancellation", "reminder"]:
+        original_event_ref = _extract_original_event_identifier(combined)
 
     # Use enhanced datetime extraction
     start = _extract_datetime(combined, tz)
@@ -553,32 +927,28 @@ def parse_event_from_text(subject: str, body_text: str, html: Optional[str], set
     if not start:
         logging.warning("No date/time found in email, trying fallback strategies")
         
-        # Fallback: Try to extract just a date and use a default time
+        # Fallback: Try to extract numeric dates only (no relative dates)
         fallback_patterns = [
-            r'(?:today|tomorrow)',
-            r'(?:next\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))',
-            r'(?:this\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))',
-            r'\\d{1,2}[/-]\\d{1,2}',  # Just month/day
+            r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}',  # MM/DD/YYYY or MM-DD-YYYY
+            r'\d{1,2}[/-]\d{1,2}',  # Just MM/DD (will infer year)
         ]
         
         for pattern in fallback_patterns:
             matches = re.findall(pattern, combined, re.IGNORECASE)
             if matches:
                 try:
-                    fallback_date = dateparser.parse(matches[0], settings={"TIMEZONE": tz, "RETURN_AS_TIMEZONE_AWARE": True})
+                    fallback_date = dateparser.parse(matches[0], settings={
+                        "TIMEZONE": tz,
+                        "RETURN_AS_TIMEZONE_AWARE": True,
+                        "PREFER_DATES_FROM": "future"  # Assume future dates
+                    })
                     if fallback_date:
                         # Set to a reasonable default time (e.g., 2 PM)
                         start = fallback_date.replace(hour=14, minute=0, second=0, microsecond=0)
-                        logging.info(f"Fallback date found: {matches[0]} -> {start}")
+                        logging.info(f"Fallback numeric date found: {matches[0]} -> {start}")
                         break
                 except:
                     continue
-        
-        # If still no date, create a placeholder event for today
-        if not start:
-            from datetime import datetime
-            start = datetime.now().replace(hour=14, minute=0, second=0, microsecond=0)
-            logging.warning(f"No date found, using placeholder: {start}")
     
     if not start:
         logging.error("Failed to extract any date/time information")
@@ -587,12 +957,26 @@ def parse_event_from_text(subject: str, body_text: str, html: Optional[str], set
     # Set end time
     end = start + timedelta(minutes=default_minutes)
 
-    # Extract fields using enhanced methods
-    title = _extract_title(combined, subject)
+    # Extract fields using enhanced methods - pass HTML for better formatting detection
+    title = _extract_title(combined, subject, html)
     speaker = _extract_speaker(combined)
-    location = _extract_line(["Location", "Where", "Room", "Venue", "Place", "Address"], combined)
-    url = _extract_line(["Zoom", "Link", "Meeting", "URL", "Join", "Webinar", "Webex", "Teams"], combined)
-    abstract = _extract_line(["Abstract", "Summary", "Description", "Overview"], combined)
+    location = _extract_location(combined)  # Use enhanced location extraction
+    url = _extract_url(combined)
+    abstract = _extract_abstract(combined)
+    
+    # Process attachments - include attachment metadata for calendar description
+    processed_attachments = []
+    if attachments:
+        for att in attachments:
+            processed_attachments.append({
+                'title': att.get('filename', 'Attachment'),
+                'mimeType': att.get('mimeType', 'application/octet-stream'),
+                'size': att.get('size', 0),
+                # Note: Gmail attachments can be viewed in the original email
+                # To add to calendar, we'd need to upload to Drive which requires additional setup
+                'fileUrl': ''  # Leave empty for now - will show in description as "view in Gmail"
+            })
+        logging.info(f"Found {len(processed_attachments)} attachments")
 
     logging.info(f"Final extracted fields:")
     logging.info(f"  Title: '{title}'")
@@ -611,5 +995,7 @@ def parse_event_from_text(subject: str, body_text: str, html: Optional[str], set
         url=url,
         abstract=abstract,
         cancelled=cancelled,
-        attachments=attachments,
+        attachments=processed_attachments if processed_attachments else None,
+        email_type=email_type,
+        original_event_ref=original_event_ref,
     )

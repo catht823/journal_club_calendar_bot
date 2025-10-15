@@ -1,27 +1,743 @@
+# Bioscience Categories for Journal Club Calendar Bot
+# Multi-label classification system with comprehensive keywords
+# Categories can overlap - events may match multiple categories
+
 categories:
-  Genetics & Genomics:
-    keywords: [genome, genomic, crispr, sequencing, gwas, variant, snp, epigenome, enhancer]
-    colorId: "11"
-  Neuroscience:
-    keywords: [neuron, neural, synapse, cortex, hippocampus, fmri, electrophysiology, glia]
-    colorId: "9"
-  Immunology:
-    keywords: [immune, t cell, b cell, cytokine, antigen, macrophage, antibody, inflammation]
-    colorId: "10"
-  Cell Biology:
-    keywords: [organelle, cytoskeleton, vesicle, endocytosis, actin, microtubule, autophagy]
+  Molecular & Cell Biology:
+    keywords:
+      # DNA/Chromatin
+      - dna repair
+      - replication fork
+      - chromatin
+      - histone
+      - nucleosome
+      - epigenetic
+      - methylation
+      - acetylation
+      - transcription factor
+      - enhancer
+      - promoter
+      - rna polymerase
+      # RNA/Protein
+      - splicing
+      - rnp
+      - ribosome
+      - autophagy
+      - apoptosis
+      - ubiquitin
+      - proteasome
+      - chaperone
+      - er stress
+      - unfolded protein
+      - upr
+      - lysosome
+      # Cytoskeleton/Trafficking
+      - cytoskeleton
+      - actin
+      - microtubule
+      - endocytosis
+      - exocytosis
+      - membrane trafficking
+      - signal transduction
+      - kinase
+      - phosphatase
+      - gpcr
+      - rtk
+      - second messenger
     colorId: "7"
-  Microbiology & Virology:
-    keywords: [bacteria, viral, virus, pathogen, microbiome, host-pathogen, antibiotic]
+  
+  Biochemistry & Metabolism:
+    keywords:
+      # Enzyme/Catalysis
+      - enzyme kinetics
+      - active site
+      - catalysis
+      - cofactor
+      - allosteric
+      # Metabolism
+      - metabolic pathway
+      - glycolysis
+      - tca cycle
+      - krebs cycle
+      - oxidative phosphorylation
+      - electron transport chain
+      - beta-oxidation
+      - amino acid metabolism
+      - one-carbon metabolism
+      # Redox
+      - redox
+      - ros
+      - reactive oxygen
+      - nad+
+      - nadh
+      - metabolite
+      - flux analysis
+      - stable isotope
+      # Techniques
+      - lc-ms
+      - mass spectrometry
+      - nmr spectroscopy
+      - metabolomics
     colorId: "6"
-  Structural Biology:
-    keywords: [cryo-em, crystallography, structure, nmr, folding, protein structure]
-    colorId: "8"
-  Computational Biology:
-    keywords: [machine learning, model, algorithm, single-cell, scrna-seq, rna-seq, computational]
+  
+  Genetics & Genomics:
+    keywords:
+      # Population genetics
+      - linkage
+      - gwas
+      - qtl
+      - variant calling
+      - snp
+      - indel
+      - cnv
+      - structural variant
+      - eqtl
+      - haplotype
+      - population genetics
+      - mendelian
+      # Gene editing
+      - crispr
+      - cas9
+      - base editor
+      - prime editing
+      - transposon
+      - shrna
+      - sirna
+      - grna
+      # Sequencing
+      - atac-seq
+      - chip-seq
+      - rna-seq
+      - scrna-seq
+      - single-cell rna
+      - wgs
+      - wes
+      - whole genome
+      - whole exome
+      - methyl-seq
+      - hi-c
+      - long-read sequencing
+      - nanopore
+      - single-cell multiomics
+      - spatial transcriptomics
+    colorId: "11"
+  
+  Epigenomics & Gene Regulation:
+    keywords:
+      - epigenome
+      - epigenetic
+      - chromatin state
+      - histone modification
+      - chip-seq
+      - atac-seq
+      - cut&run
+      - cut&tag
+      - dna methylation
+      - enhancer
+      - promoter
+      - transcriptional regulation
+      - gene expression
+      - transcription factor
+      - chromatin remodeling
+      - nucleosome positioning
     colorId: "5"
-  Systems Biology:
-    keywords: [network, systems, dynamics, regulation, feedback, modeling]
+  
+  Developmental Biology & Stem Cells:
+    keywords:
+      # Development
+      - morphogen
+      - patterning
+      - axis formation
+      - lineage
+      - fate mapping
+      - gastrulation
+      - neurulation
+      - organogenesis
+      # Stem cells
+      - stem cell
+      - ipsc
+      - esc
+      - induced pluripotent
+      - embryonic stem
+      - niche
+      - differentiation
+      - reprogramming
+      - organoid
+      - morphogenesis
+      # Signaling
+      - notch
+      - wnt
+      - hedgehog
+      - bmp
+      - fgf
+      - hox
+      - lineage tracing
+      - in situ hybridization
+    colorId: "10"
+  
+  Neuroscience:
+    keywords:
+      # Synaptic/Circuit
+      - synapse
+      - synaptic
+      - ltp
+      - ltd
+      - dendritic spine
+      - neurotransmitter
+      - neuromodulator
+      - ion channel
+      # Electrophysiology
+      - electrophysiology
+      - patch clamp
+      - calcium imaging
+      - optogenetics
+      - chemogenetics
+      - dreadds
+      # Connectivity
+      - connectomics
+      - tract tracing
+      - fmri
+      - functional mri
+      - eeg
+      - meg
+      - behavior
+      - behavioral
+      # Brain regions
+      - motor cortex
+      - hippocampus
+      - basal ganglia
+      - cerebellum
+      - cortex
+      - cortical
+      # Glia
+      - glia
+      - astrocyte
+      - microglia
+      - oligodendrocyte
+      - neuroinflammation
+      - neurodegeneration
+      # Recording
+      - single-unit
+      - spike sorting
+      - neural activity
+      - brain dynamics
+      - neural network
+    colorId: "9"
+  
+  Immunology:
+    keywords:
+      # Immune cells
+      - innate immunity
+      - adaptive immunity
+      - antigen
+      - epitope
+      - tcr
+      - bcr
+      - t cell receptor
+      - b cell receptor
+      - mhc
+      - hla
+      - t cell
+      - b cell
+      - cd4
+      - cd8
+      - treg
+      - nk cell
+      - macrophage
+      - dendritic cell
+      # Molecules
+      - cytokine
+      - chemokine
+      - interferon
+      - complement
+      - antibody
+      # Processes
+      - germinal center
+      - somatic hypermutation
+      - class switch
+      - tolerance
+      - autoimmunity
+      - inflammation
+      - inflammatory
+      - immune response
+      # Vaccines/Therapy
+      - vaccine
+      - adjuvant
+      - immunotherapy
+      - checkpoint
+      - pd-1
+      - pd-l1
+      - ctla-4
+      - car-t
+      # Techniques
+      - flow cytometry
+      - facs
+      - elisa
+      - elispot
+    colorId: "10"
+  
+  Microbiology & Infectious Disease:
+    keywords:
+      # Bacteria
+      - bacterium
+      - bacteria
+      - bacterial
+      - archaea
+      - pathogen
+      - commensal
+      - biofilm
+      - quorum sensing
+      - antibiotic resistance
+      - plasmid
+      - phage
+      - bacteriophage
+      - horizontal gene transfer
+      - virulence
+      - toxin
+      - lps
+      - lipopolysaccharide
+      # Virology
+      - viral
+      - virus
+      - virion
+      - viral capsid
+      - envelope
+      - genome segment
+      - viral replication
+      - reverse transcription
+      - viral entry
+      - viral fusion
+      - budding
+      - neutralizing antibody
+      - antiviral
+      # Host-pathogen
+      - host-pathogen
+      - host pathogen
+      - infection
+      - infectious disease
+      - pcr diagnostics
+      - culture
+      - mic
+      - minimum inhibitory
+      - bsl-2
+      - bsl-3
+      - biosafety
+    colorId: "6"
+  
+  Microbiome:
+    keywords:
+      - 16s rrna
+      - 16s
+      - metagenome
+      - metagenomic
+      - metatranscriptome
+      - amplicon sequencing
+      - otu
+      - asv
+      - alpha diversity
+      - beta diversity
+      - bray-curtis
+      - unifrac
+      - dysbiosis
+      - colonization
+      - probiotics
+      - prebiotics
+      - fmt
+      - fecal microbiota
+      - gnotobiotic
+      - germ-free
+      - scfa
+      - butyrate
+      - bile acid
+      - host-microbe
+      - gut microbiome
+      - microbiota
     colorId: "4"
+  
+  Cancer Biology:
+    keywords:
+      # Tumor biology
+      - tumor
+      - cancer
+      - oncology
+      - tumor microenvironment
+      - tme
+      - clonal evolution
+      - driver mutation
+      - oncogene
+      - tumor suppressor
+      # Key genes
+      - tp53
+      - p53
+      - kras
+      - egfr
+      - braf
+      - myc
+      - pten
+      # Pathways
+      - mapk
+      - pi3k
+      - akt
+      - mtor
+      # Hallmarks
+      - hallmarks of cancer
+      - emt
+      - epithelial mesenchymal
+      - metastasis
+      - metastatic
+      - angiogenesis
+      - aneuploidy
+      - chromothripsis
+      # Therapy
+      - synthetic lethality
+      - parp inhibitor
+      - targeted therapy
+      - chemotherapy
+      - radiotherapy
+      # Biomarkers
+      - biomarker
+      - liquid biopsy
+      - ctdna
+      - circulating tumor
+      - pdx
+      - patient-derived xenograft
+      - tumor organoid
+    colorId: "11"
+  
+  Physiology & Systems Biology:
+    keywords:
+      # General
+      - homeostasis
+      - physiological
+      - physiology
+      # Endocrine
+      - endocrine
+      - hormone
+      - hormonal
+      - receptor
+      - circadian
+      - circadian rhythm
+      # Organ systems
+      - cardiovascular
+      - cardiac
+      - heart
+      - respiratory
+      - lung
+      - renal
+      - kidney
+      - hepatic
+      - liver
+      - muscle
+      - skeletal muscle
+      - bone
+      - adipose
+      - fat tissue
+      - pancreas
+      - pancreatic
+      # Metabolism
+      - glucose tolerance
+      - insulin sensitivity
+      - diabetes
+      - metabolic syndrome
+      - telemetry
+      # Systems
+      - systems biology
+      - systems modeling
+      - feedback loop
+      - network motif
+      - control theory
+      - ode model
+      - differential equation
+      - multiscale model
+    colorId: "3"
+  
+  Structural Biology & Biophysics:
+    keywords:
+      # Structure determination
+      - x-ray crystallography
+      - crystallography
+      - cryo-em
+      - cryo-electron
+      - cryo-et
+      - cryo-tomography
+      - saxs
+      - nmr
+      - nuclear magnetic resonance
+      # Modeling
+      - molecular dynamics
+      - md simulation
+      - docking
+      - free energy
+      - protein folding
+      - folding
+      # Biophysics
+      - fret
+      - single-molecule
+      - single molecule
+      - afm
+      - atomic force
+      - optical tweezers
+      - intrinsically disordered
+      - idp
+      - phase separation
+      - condensate
+      - biomolecular condensate
+      - coarse-grained
+      # Prediction
+      - structure prediction
+      - alphafold
+      - rosetta
+      - pdb
+      - protein structure
+    colorId: "8"
+  
+  Synthetic Biology & Biotechnology:
+    keywords:
+      # Circuits
+      - genetic circuit
+      - toggle switch
+      - oscillator
+      - promoter engineering
+      - ribosome binding site
+      - codon optimization
+      - chassis
+      # Assembly
+      - gibson assembly
+      - golden gate
+      - directed evolution
+      - biosensor
+      - metabolic engineering
+      - cell-free
+      - cell free
+      # Devices
+      - microfluidics
+      - droplet
+      - lab-on-chip
+      - bioproduction
+      - biocontainment
+      - kill switch
+      - synthetic biology
+      - bioengineering
+    colorId: "5"
+  
+  Plant Biology:
+    keywords:
+      # Model organisms
+      - arabidopsis
+      - maize
+      - rice
+      - plant
+      # Structures
+      - stomata
+      - guard cell
+      - chloroplast
+      - thylakoid
+      # Photosynthesis
+      - photosynthesis
+      - rubisco
+      - c3
+      - c4
+      - cam
+      # Hormones
+      - phytohormone
+      - auxin
+      - cytokinin
+      - gibberellin
+      - aba
+      - abscisic acid
+      - ethylene
+      - brassinosteroid
+      - jasmonate
+      - salicylic acid
+      # Processes
+      - photoperiod
+      - flowering time
+      - plant immunity
+      - pattern-triggered immunity
+      - effector-triggered immunity
+      - root architecture
+      - drought tolerance
+    colorId: "2"
+  
+  Ecology & Evolution:
+    keywords:
+      # Evolution
+      - natural selection
+      - genetic drift
+      - gene flow
+      - speciation
+      - phylogeny
+      - phylogenetic
+      - cladistics
+      - comparative genomics
+      - macroevolution
+      - microevolution
+      - fitness landscape
+      - life history
+      - experimental evolution
+      # Ecology
+      - biodiversity
+      - community ecology
+      - trophic
+      - food web
+      - niche
+      - ecological niche
+      - ecosystem
+      - biogeography
+      - conservation
+      - climate impact
+      - climate change
+      - environmental
+    colorId: "3"
+  
+  Proteomics & Transcriptomics:
+    keywords:
+      # Proteomics
+      - proteomics
+      - western blot
+      - mass spec
+      - mass spectrometry
+      - dia
+      - dda
+      - tmt
+      - itraq
+      - ptm
+      - post-translational
+      - phosphoproteomics
+      - crosslinking ms
+      # Transcriptomics
+      - rna-seq
+      - scrna-seq
+      - single-cell rna
+      - ribosome profiling
+      - polysome
+      - nascent rna
+      - gro-seq
+      - pro-seq
+      - spatial transcriptomics
+      - merfish
+      - slide-seq
+      - smfish
+      - iso-seq
+      - nanopore
+      - basecalling
+      - transcriptome
+      - gene expression
+    colorId: "5"
+  
+  Imaging & Microscopy:
+    keywords:
+      # Microscopy types
+      - fluorescence microscopy
+      - confocal
+      - super-resolution
+      - sted
+      - palm
+      - storm
+      - light-sheet
+      - multiphoton
+      - two-photon
+      # Live imaging
+      - frap
+      - flip
+      - live-cell imaging
+      - time-lapse
+      # Analysis
+      - image segmentation
+      - cell tracking
+      - morphometrics
+      - high-content screening
+      - digital pathology
+      - whole-slide imaging
+      - microscopy
+      - imaging
+    colorId: "8"
+  
+  Pharmacology & Drug Discovery:
+    keywords:
+      # Drug discovery
+      - small molecule
+      - sar
+      - structure-activity
+      - hts
+      - high-throughput screening
+      - fragment screening
+      - protac
+      - covalent inhibitor
+      - target engagement
+      - chemoproteomics
+      - click chemistry
+      - photoaffinity
+      # Pharmacology
+      - pk
+      - pd
+      - pharmacokinetics
+      - pharmacodynamics
+      - bioavailability
+      - toxicity
+      - off-target
+      - admet
+      - ind
+      - dmpk
+      - phenotypic screen
+      - drug-gene
+      - drug synergy
+      - isobologram
+      - inhibitor
+      - agonist
+      - antagonist
+    colorId: "4"
+  
+  Bioinformatics & Computational Biology:
+    keywords:
+      # Genomics analysis
+      - reference genome
+      - alignment
+      - sequence alignment
+      - assembly
+      - genome assembly
+      - k-mer
+      - de bruijn
+      - variant calling
+      - annotation
+      - genome annotation
+      # Data analysis
+      - gene set enrichment
+      - gsea
+      - differential expression
+      - deseq
+      - batch effect
+      - normalization
+      # Visualization/clustering
+      - pca
+      - principal component
+      - t-sne
+      - umap
+      - clustering
+      - trajectory
+      - pseudotime
+      # Networks
+      - grn
+      - gene regulatory network
+      - network analysis
+      - pathway analysis
+      - survival analysis
+      # Reproducibility
+      - reproducibility
+      - workflow
+      - snakemake
+      - nextflow
+      - containerization
+      - docker
+      - fair data
+      - machine learning
+      - deep learning
+      - neural network
+      - ai
+      - artificial intelligence
+      - computational
+      - bioinformatics
+    colorId: "5"
+
 fallback_category: Other
 fallback_colorId: "2"

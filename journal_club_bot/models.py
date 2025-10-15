@@ -14,6 +14,8 @@ class ParsedEvent:
     abstract: Optional[str] = None
     cancelled: bool = False
     attachments: Optional[List[Dict[str, str]]] = None
+    email_type: str = "new"  # "new", "update", "cancellation", "reminder"
+    original_event_ref: Optional[str] = None  # Reference to help find original event
 
 @dataclass
 class Services:
